@@ -1,17 +1,16 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class GameManager : NetworkBehaviour
 {
-    // Singleton
     public static GameManager Instance { get; private set; }
 
-    // Network variables - automatically synced across all clients
     public NetworkVariable<int> Player1Score = new NetworkVariable<int>(0);
     public NetworkVariable<int> Player2Score = new NetworkVariable<int>(0);
     public NetworkVariable<bool> RoundInProgress = new NetworkVariable<bool>(false);
+    public NetworkVariable<ulong> WinnerClientId = new NetworkVariable<ulong>(0);
 
-    // Delegate for hit events
     public delegate void OnHitDelegate(ulong scoringPlayerId);
     public static event OnHitDelegate OnPlayerScored;
 
@@ -23,7 +22,6 @@ public class GameManager : NetworkBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(gameObject);
     }
 
     public override void OnNetworkSpawn()
@@ -34,10 +32,10 @@ public class GameManager : NetworkBehaviour
 
     public void StartRound()
     {
-    if (!IsServer) return;
-    if (PlayerSpawner.Instance != null)
-        PlayerSpawner.Instance.RespawnPlayers();
-    RoundInProgress.Value = true;
+        if (!IsServer) return;
+        if (PlayerSpawner.Instance != null)
+            PlayerSpawner.Instance.RespawnPlayers();
+        RoundInProgress.Value = true;
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -51,17 +49,50 @@ public class GameManager : NetworkBehaviour
             Player2Score.Value++;
 
         RoundInProgress.Value = false;
-
         OnPlayerScored?.Invoke(scoringPlayerId);
+
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlaySFX(AudioManager.Instance.hitSound);
+
+        if (PlayerSpawner.Instance != null)
+            PlayerSpawner.Instance.RespawnPlayers();
 
         if (CheckMatchOver())
         {
-            Debug.Log("Match over!");
+            WinnerClientId.Value = scoringPlayerId;
+
+            int playerNumber = 1;
+            int index = 0;
+            foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+            {
+                index++;
+                if (client.ClientId == scoringPlayerId)
+                {
+                    playerNumber = index;
+                    break;
+                }
+            }
+            string winnerName = $"Player {playerNumber}";
+            SetWinnerClientRpc(winnerName);
+
+            foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+            {
+                if (client.PlayerObject != null)
+                    client.PlayerObject.Despawn();
+            }
+            NetworkManager.Singleton.SceneManager.LoadScene("GameOverScene", LoadSceneMode.Single);
         }
         else
         {
             Invoke(nameof(StartRound), 2f);
         }
+    }
+
+    [ClientRpc]
+    private void SetWinnerClientRpc(string winnerName)
+    {
+        if (DatabaseManager.Instance != null)
+            DatabaseManager.Instance.LastWinnerName = winnerName;
     }
 
     public bool CheckMatchOver()

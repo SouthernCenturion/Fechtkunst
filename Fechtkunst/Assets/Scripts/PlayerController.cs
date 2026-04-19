@@ -10,15 +10,13 @@ public class PlayerController : NetworkBehaviour
     public float attackCooldown = 0.5f;
     private float lastAttackTime;
 
-    // Network synced combat state
-    public NetworkVariable<CombatState> CurrentCombatState = 
+    public NetworkVariable<CombatState> CurrentCombatState =
         new NetworkVariable<CombatState>(CombatState.Neutral,
         NetworkVariableReadPermission.Everyone,
         NetworkVariableWritePermission.Owner);
 
     private Rigidbody2D rb;
 
-    // Combat state pattern
     public enum CombatState
     {
         Neutral,
@@ -38,28 +36,19 @@ public class PlayerController : NetworkBehaviour
 
     private void Update()
     {
+    if (Time.timeScale == 0) return;
     if (!IsOwner) return;
-    
-    // Temporary debug - remove later
-    //Debug.Log($"Owner: {IsOwner}, A key: {Input.GetKey(KeyCode.A)}, D key: {Input.GetKey(KeyCode.D)}");
-    
+    if (GameManager.Instance == null) return;
+    if (!GameManager.Instance.RoundInProgress.Value) return;
     HandleMovement();
     HandleCombatInput();
     }
 
-    private void OnGUI()
-    {
-    if (!IsOwner) return;
-    GUI.Label(new Rect(10, 10, 300, 20), $"My State: {CurrentCombatState.Value}");
-    }
-    
     private void HandleMovement()
     {
         float moveInput = 0f;
-
         if (Input.GetKey(KeyCode.A)) moveInput = -1f;
         if (Input.GetKey(KeyCode.D)) moveInput = 1f;
-
         rb.linearVelocity = new Vector2(moveInput * moveSpeed, rb.linearVelocity.y);
     }
 
@@ -69,7 +58,6 @@ public class PlayerController : NetworkBehaviour
 
         if (isGuarding)
         {
-            // Guard states
             if (Input.GetKey(KeyCode.UpArrow))
                 CurrentCombatState.Value = CombatState.GuardHigh;
             else if (Input.GetKey(KeyCode.RightArrow))
@@ -81,24 +69,28 @@ public class PlayerController : NetworkBehaviour
         }
         else
         {
-            // Attack states
             if (Input.GetKeyDown(KeyCode.UpArrow) && CanAttack())
             {
                 CurrentCombatState.Value = CombatState.AttackHigh;
                 lastAttackTime = Time.time;
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlaySFX(AudioManager.Instance.swingSound);
             }
             else if (Input.GetKeyDown(KeyCode.RightArrow) && CanAttack())
             {
                 CurrentCombatState.Value = CombatState.AttackMid;
                 lastAttackTime = Time.time;
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlaySFX(AudioManager.Instance.swingSound);
             }
             else if (Input.GetKeyDown(KeyCode.LeftArrow) && CanAttack())
             {
                 CurrentCombatState.Value = CombatState.AttackLow;
                 lastAttackTime = Time.time;
+                if (AudioManager.Instance != null)
+                    AudioManager.Instance.PlaySFX(AudioManager.Instance.swingSound);
             }
 
-            // Return to neutral after attack
             if (CurrentCombatState.Value != CombatState.Neutral &&
                 CurrentCombatState.Value != CombatState.GuardHigh &&
                 CurrentCombatState.Value != CombatState.GuardMid &&
